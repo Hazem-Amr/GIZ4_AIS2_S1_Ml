@@ -1,0 +1,7 @@
+Welcome to the TextFileReader example.
+This file is used to test reading text files in Python.
+Object Oriented Programming makes code reusable and organized.
+
+Python is easy to learn.
+Python is powerful.
+Python is fun.
