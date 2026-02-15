@@ -3,6 +3,9 @@ import matplotlib.pyplot as plt
 
 
 class MultipLinearRegression_Hazem:
+    """ 
+
+                                """
 
     def __init__(self, alpha=0.01, num_iterations=100):
         self.alpha = alpha
