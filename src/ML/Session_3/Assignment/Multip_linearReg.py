@@ -1,17 +1,20 @@
-import numpy as np 
+import numpy as np
 import matplotlib.pyplot as plt
 
 
 class MultipLinearRegression_Hazem:
-    """ 
-
-                                """
+    """
+    Multiple Linear Regression with Gradient Descent
+    Supports: No regularization, Ridge (L2), Lasso (L1)
+    """
 
     def __init__(self, alpha=0.01, num_iterations=100):
         self.alpha = alpha
         self.num_iterations = num_iterations
-        self.w = None   # Now will be vector
+        self.w = None
         self.b = 0
+        self.lambda_ = 0.0
+        self.reg_type = "none"   # "none", "ridge", "lasso"
         self.SSE_values = []
         self.MSE_values = []
 
@@ -24,13 +27,22 @@ class MultipLinearRegression_Hazem:
 
     def compute_gradients(self, X, y, y_hat):
         n = len(y)
-        dw = (1/n) * np.dot(X.T, (y_hat - y))
-        db = (1/n) * np.sum(y_hat - y)
+
+        dw = (1 / n) * np.dot(X.T, (y_hat - y))
+        db = (1 / n) * np.sum(y_hat - y)
+
+        # -------- Regularization --------
+        if self.reg_type == "ridge":          # L2
+            dw += self.lambda_ * self.w
+
+        elif self.reg_type == "lasso":        # L1
+            dw += self.lambda_ * np.sign(self.w)
+
         return dw, db
 
     def compute_sse(self, y, y_hat):
         return np.sum((y_hat - y) ** 2)
-    
+
     def compute_mse(self, y, y_hat):
         return np.mean((y_hat - y) ** 2)
 
@@ -38,18 +50,25 @@ class MultipLinearRegression_Hazem:
         n_samples, n_features = X.shape
         self.initialize_parameters(n_features)
 
+        self.SSE_values = []
+        self.MSE_values = []
+
         for i in range(self.num_iterations):
 
+            # 1. Predict
             y_hat = self.predict(X)
 
+            # 2. Gradients
             dw, db = self.compute_gradients(X, y, y_hat)
 
+            # 3. Update parameters
             self.w -= self.alpha * dw
             self.b -= self.alpha * db
 
-            # re-compute predictions
+            # 4. Re-predict AFTER update
             y_hat = self.predict(X)
 
+            # 5. Compute losses ONCE
             sse = self.compute_sse(y, y_hat)
             mse = self.compute_mse(y, y_hat)
 
@@ -60,6 +79,18 @@ class MultipLinearRegression_Hazem:
                 print(f"Iteration {i+1}, SSE: {sse}, MSE: {mse}")
 
         return self
+
+    # ---------- Explicit Regularization APIs ----------
+
+    def fit_ridge(self, X, y, lambda_):
+        self.lambda_ = lambda_
+        self.reg_type = "ridge"
+        return self.fit(X, y)
+
+    def fit_lasso(self, X, y, lambda_):
+        self.lambda_ = lambda_
+        self.reg_type = "lasso"
+        return self.fit(X, y)
 
     def plot_loss(self):
         plt.figure(figsize=(6, 4))
