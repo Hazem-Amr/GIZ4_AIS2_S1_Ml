@@ -80,7 +80,6 @@ class MultipLinearRegression_Hazem:
 
         return self
 
-    # ---------- Explicit Regularization APIs ----------
 
     def fit_ridge(self, X, y, lambda_):
         self.lambda_ = lambda_
