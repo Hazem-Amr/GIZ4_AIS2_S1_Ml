@@ -35,21 +35,21 @@ def ModelComplexity(X, y):
     test_std = np.std(test_scores, axis=1)
 
     # Plot the validation curve
-    pl.figure(figsize=(7, 5))
-    pl.title('Decision Tree Regressor Complexity Performance')
-    pl.plot(max_depth, train_mean, 'o-', color = 'r', label = 'Training Score')
-    pl.plot(max_depth, test_mean, 'o-', color = 'g', label = 'Validation Score')
-    pl.fill_between(max_depth, train_mean - train_std, \
+    plt.figure(figsize=(7, 5))
+    plt.title('Decision Tree Regressor Complexity Performance')
+    plt.plot(max_depth, train_mean, 'o-', color = 'r', label = 'Training Score')
+    plt.plot(max_depth, test_mean, 'o-', color = 'g', label = 'Validation Score')
+    plt.fill_between(max_depth, train_mean - train_std, \
         train_mean + train_std, alpha = 0.15, color = 'r')
-    pl.fill_between(max_depth, test_mean - test_std, \
+    plt.fill_between(max_depth, test_mean - test_std, \
         test_mean + test_std, alpha = 0.15, color = 'g')
     
     # Visual aesthetics
-    pl.legend(loc = 'lower right')
-    pl.xlabel('Maximum Depth')
-    pl.ylabel('Score')
-    pl.ylim([-0.05,1.05])
-    pl.show()
+    plt.legend(loc = 'lower right')
+    plt.xlabel('Maximum Depth')
+    plt.ylabel('Score')
+    plt.ylim([-0.05,1.05])
+    plt.show()
 
 
 def PredictTrials(X, y, fitter, data):
