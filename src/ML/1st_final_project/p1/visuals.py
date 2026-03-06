@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.model_selection import learning_curve, ShuffleSplit, train_test_split
 from sklearn.tree import DecisionTreeRegressor
+from sklearn.model_selection import validation_curve
 
 # Suppress matplotlib user warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib")
@@ -25,7 +26,7 @@ def ModelComplexity(X, y):
     max_depth = np.arange(1,11)
 
     # Calculate the training and testing scores
-    train_scores, test_scores = curves.validation_curve(DecisionTreeRegressor(), X, y, \
+    train_scores, test_scores = validation_curve(DecisionTreeRegressor(), X, y,\
         param_name = "max_depth", param_range = max_depth, cv = cv, scoring = 'r2')
 
     # Find the mean and standard deviation for smoothing
