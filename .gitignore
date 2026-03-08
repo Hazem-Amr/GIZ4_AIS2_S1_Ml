@@ -1,6 +1,6 @@
 .env
 Customer_Churn_Project
 Data_Analysis
-__pycache__/
-*.pyc
 src/ML/Session_7/Code/creditcard.csv
+src/ML/1st_final_project/p1/boston_housing_app
+
