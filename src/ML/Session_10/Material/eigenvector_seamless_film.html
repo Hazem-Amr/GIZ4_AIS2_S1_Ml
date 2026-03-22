@@ -1,0 +1,551 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+#wrap{background:#000;border-radius:8px;overflow:hidden;position:relative;width:100%;max-width:820px;margin:0 auto;}
+canvas{display:block;width:100%;}
+#ui{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.92));padding:6px 12px 10px;transition:opacity .3s;}
+#ptrack{width:100%;height:4px;background:rgba(255,255,255,.15);border-radius:2px;cursor:pointer;margin-bottom:7px;position:relative;}
+#pfill{height:4px;background:#7F77DD;border-radius:2px;width:0%;pointer-events:none;}
+#pthumb{width:12px;height:12px;background:#fff;border-radius:50%;position:absolute;top:-4px;left:0;transform:translateX(-50%);pointer-events:none;}
+#brow{display:flex;align-items:center;gap:7px;}
+.vb{background:transparent;border:none;color:#fff;cursor:pointer;font-size:15px;padding:2px 4px;opacity:.8;line-height:1;}
+.vb:hover{opacity:1;}
+#tdsp{font-size:11px;color:#888;font-family:monospace;min-width:72px;}
+#capt{flex:1;font-size:11px;color:#ccc;font-family:monospace;text-align:right;line-height:1.3;max-width:58%;}
+</style>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+  <div id="ui">
+    <div id="ptrack"><div id="pfill"></div><div id="pthumb"></div></div>
+    <div id="brow">
+      <button class="vb" id="pb" onclick="togglePlay()">▶</button>
+      <button class="vb" onclick="skip(-10)">⏮10s</button>
+      <button class="vb" onclick="skip(10)">10s⏭</button>
+      <button class="vb" onclick="restart()">↺</button>
+      <span id="tdsp">0.0s / 120s</span>
+      <span id="capt"></span>
+    </div>
+  </div>
+</div>
+<script>
+const cv=document.getElementById('cv');
+const ctx=cv.getContext('2d');
+const DPR=window.devicePixelRatio||1;
+let W,H,CX,CY,SC;
+
+function resize(){
+  const pw=Math.min((document.getElementById('wrap').offsetWidth||700),820);
+  W=pw; H=Math.round(pw*(480/820));
+  cv.width=W*DPR; cv.height=H*DPR;
+  cv.style.width=W+'px'; cv.style.height=H+'px';
+  ctx.setTransform(1,0,0,1,0,0); ctx.scale(DPR,DPR);
+  CX=W/2; CY=H/2; SC=Math.min(W,H)/10;
+}
+
+/* ── helpers ── */
+function lerp(a,b,t){return a+(b-a)*t;}
+function cl(v,a,b){return Math.max(a,Math.min(b,v));}
+function sm(t){t=cl(t,0,1);return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
+function n2(v){const l=Math.sqrt(v[0]*v[0]+v[1]*v[1]);return l<1e-9?[1,0]:[v[0]/l,v[1]/l];}
+function d2(a,b){return a[0]*b[0]+a[1]*b[1];}
+function ws(x,y){return[CX+x*SC,CY-y*SC];}
+
+/* matrix A=[3,1;0,2] */
+function applyA(x,y){return[3*x+1*y,0*x+2*y];}
+function lerpA(x,y,t){const[ax,ay]=applyA(x,y);return[lerp(x,ax,t),lerp(y,ay,t)];}
+/* symmetric B=[2,1;1,2] */
+function applyB(x,y){return[2*x+y,x+2*y];}
+function lerpB(x,y,t){const[bx,by]=applyB(x,y);return[lerp(x,bx,t),lerp(y,by,t)];}
+
+const E1={lam:3,vec:[1,0]};
+const E2={lam:2,vec:n2([1,1])};
+const SE1={lam:3,vec:n2([1,1])};
+const SE2={lam:1,vec:n2([-1,1])};
+const PC1=n2([0.677,0.736]), PC2=n2([0.736,-0.677]);
+
+/* ── drawing ── */
+function aHead(x2,y2,dx,dy,col,hw,hh){
+  const l=Math.sqrt(dx*dx+dy*dy);if(l<2)return;
+  const ux=dx/l,uy=dy/l;
+  ctx.beginPath();ctx.moveTo(x2,y2);
+  ctx.lineTo(x2-hw*ux+hh*(-uy),y2-hw*uy+hh*ux);
+  ctx.lineTo(x2-hw*ux-hh*(-uy),y2-hw*uy-hh*ux);
+  ctx.closePath();ctx.fillStyle=col;ctx.fill();
+}
+function arrow(x1,y1,x2,y2,col,lw,lbl,al,dash){
+  al=cl(al??1,0,1); if(al<0.01)return;
+  ctx.globalAlpha=al;
+  if(dash)ctx.setLineDash([5,4]);
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);
+  ctx.strokeStyle=col;ctx.lineWidth=lw;ctx.stroke();ctx.setLineDash([]);
+  aHead(x2,y2,x2-x1,y2-y1,col,10,4);
+  if(lbl){const dx=x2-x1,dy=y2-y1,l=Math.sqrt(dx*dx+dy*dy);
+    if(l>12){ctx.fillStyle=col;ctx.font='bold 12px monospace';ctx.textAlign='center';
+      ctx.fillText(lbl,(x1+x2)/2-dy/l*14,(y1+y2)/2+dx/l*14);}}
+  ctx.globalAlpha=1;
+}
+function drawGrid(fn,tAmt,al){
+  al=cl(al??1,0,1);if(al<0.01)return;
+  ctx.globalAlpha=al;
+  const ext=Math.ceil(Math.max(W,H)/(SC*2))+2;
+  ctx.lineWidth=0.6;
+  for(let i=-ext;i<=ext;i++){
+    ctx.beginPath();ctx.strokeStyle='rgba(0,200,230,.48)';
+    for(let j=-ext;j<=ext;j++){const[px,py]=ws(...fn(i,j,tAmt));j===-ext?ctx.moveTo(px,py):ctx.lineTo(px,py);}ctx.stroke();
+    ctx.beginPath();ctx.strokeStyle='rgba(0,200,230,.48)';
+    for(let j=-ext;j<=ext;j++){const[px,py]=ws(...fn(j,i,tAmt));j===-ext?ctx.moveTo(px,py):ctx.lineTo(px,py);}ctx.stroke();
+  }
+  ctx.strokeStyle='rgba(255,145,45,.85)';ctx.lineWidth=1.6;
+  ctx.beginPath();ctx.moveTo(...ws(...fn(-ext,0,tAmt)));ctx.lineTo(...ws(...fn(ext,0,tAmt)));ctx.stroke();
+  ctx.beginPath();ctx.moveTo(...ws(...fn(0,-ext,tAmt)));ctx.lineTo(...ws(...fn(0,ext,tAmt)));ctx.stroke();
+  for(let i=-ext;i<=ext;i+=3){
+    const p1=ws(...fn(i,0,tAmt)),p2=ws(...fn(i+.001,0,tAmt));
+    aHead(p1[0],p1[1],p2[0]-p1[0],p2[1]-p1[1],'rgba(255,145,45,.7)',6,3);
+    const q1=ws(...fn(0,i,tAmt)),q2=ws(...fn(0,i+.001,tAmt));
+    aHead(q1[0],q1[1],q2[0]-q1[0],q2[1]-q1[1],'rgba(255,145,45,.7)',6,3);
+  }
+  ctx.globalAlpha=1;
+}
+function drawELine(vec,col,al,lbl){
+  al=cl(al??1,0,1);if(al<0.01)return;
+  ctx.globalAlpha=al;
+  const ext=Math.ceil(Math.max(W,H)/(SC*2))+1;
+  ctx.setLineDash([7,5]);
+  ctx.beginPath();ctx.moveTo(...ws(-vec[0]*ext,-vec[1]*ext));ctx.lineTo(...ws(vec[0]*ext,vec[1]*ext));
+  ctx.strokeStyle=col;ctx.lineWidth=1.8;ctx.stroke();ctx.setLineDash([]);
+  if(lbl){const[lx,ly]=ws(vec[0]*(ext*.78),vec[1]*(ext*.78));
+    ctx.fillStyle=col;ctx.font='500 11px monospace';ctx.textAlign='center';ctx.fillText(lbl,lx,ly-8);}
+  ctx.globalAlpha=1;
+}
+function drawUSq(fn,t,al){
+  al=cl(al??1,0,1);if(al<0.01)return;
+  ctx.globalAlpha=al;
+  ctx.beginPath();
+  [[0,0],[1,0],[1,1],[0,1]].forEach((c,i)=>{const[px,py]=ws(...fn(c[0],c[1],t));i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);});
+  ctx.closePath();ctx.fillStyle='rgba(160,210,0,.2)';ctx.fill();ctx.strokeStyle='rgba(180,240,0,.8)';ctx.lineWidth=1.6;ctx.stroke();
+  ctx.globalAlpha=1;
+}
+function drawBasis(fn,t,al){
+  al=cl(al??1,0,1);if(al<0.01)return;
+  const[ox,oy]=ws(...fn(0,0,t));
+  arrow(ox,oy,...ws(...fn(1,0,t)),'#E84040',2.2,'î',al);
+  arrow(ox,oy,...ws(...fn(0,1,t)),'#60EE60',2.2,'ĵ',al);
+}
+function drawDot(vx,vy,col,al){
+  al=cl(al??1,0,1);if(al<0.01)return;
+  ctx.globalAlpha=al;
+  ctx.beginPath();ctx.arc(...ws(vx,vy),8,0,Math.PI*2);
+  ctx.fillStyle=col;ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.strokeStyle='#000';ctx.lineWidth=1.1;
+  ctx.beginPath();ctx.moveTo(ws(vx,vy)[0]-4,ws(vx,vy)[1]);ctx.lineTo(ws(vx,vy)[0]+4,ws(vx,vy)[1]);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(ws(vx,vy)[0],ws(vx,vy)[1]-4);ctx.lineTo(ws(vx,vy)[0],ws(vx,vy)[1]+4);ctx.stroke();
+  ctx.globalAlpha=1;
+}
+function drawMatHUD(a,b,c,d,vx,vy,tAmt,al){
+  al=cl(al??1,0,1);if(al<0.01)return;
+  const avx=a*vx+b*vy,avy=c*vx+d*vy;
+  const tvx=lerp(vx,avx,tAmt),tvy=lerp(vy,avy,tAmt);
+  ctx.globalAlpha=al;
+  ctx.fillStyle='rgba(0,0,0,.78)';
+  ctx.beginPath();if(ctx.roundRect)ctx.roundRect(8,8,235,56,7);else ctx.rect(8,8,235,56);ctx.fill();
+  ctx.font='bold 13px monospace';ctx.textAlign='left';
+  ctx.fillStyle='#555';ctx.fillText('[',13,27);ctx.fillText(']',88,27);ctx.fillText('[',13,48);ctx.fillText(']',88,48);
+  ctx.fillStyle='#E8C040';ctx.fillText(a.toFixed(2),18,27);ctx.fillStyle='#90B840';ctx.fillText(b.toFixed(2),52,27);
+  ctx.fillStyle='#E8C040';ctx.fillText(c.toFixed(2),18,48);ctx.fillStyle='#90B840';ctx.fillText(d.toFixed(2),52,48);
+  ctx.fillStyle='#555';ctx.fillText('[',96,27);ctx.fillText(']',134,27);ctx.fillText('[',96,48);ctx.fillText(']',134,48);
+  ctx.fillStyle='#FFD700';ctx.fillText(vx.toFixed(2),101,27);ctx.fillText(vy.toFixed(2),101,48);
+  ctx.fillStyle='#555';ctx.fillText('=',141,38);
+  ctx.fillStyle='#555';ctx.fillText('[',149,27);ctx.fillText(']',210,27);ctx.fillText('[',149,48);ctx.fillText(']',210,48);
+  ctx.fillStyle='#4fc';ctx.fillText(tvx.toFixed(2),154,27);ctx.fillText(tvy.toFixed(2),154,48);
+  ctx.globalAlpha=1;
+}
+function drawMsg(text,col,bg,y,al){
+  al=cl(al??1,0,1);if(al<0.01)return;
+  ctx.globalAlpha=al;
+  const bw=cl(W-16,100,440),bh=29,bx=(W-bw)/2;
+  ctx.fillStyle=bg;ctx.beginPath();if(ctx.roundRect)ctx.roundRect(bx,y,bw,bh,7);else ctx.rect(bx,y,bw,bh);ctx.fill();
+  ctx.strokeStyle=col;ctx.lineWidth=0.7;ctx.stroke();
+  ctx.fillStyle=col;ctx.font='bold 12px monospace';ctx.textAlign='center';ctx.fillText(text,W/2,y+19);
+  ctx.globalAlpha=1;
+}
+function drawRA(u1,u2,col,sz,al){
+  al=cl(al??1,0,1);if(al<0.01)return;
+  const[ox,oy]=ws(0,0);
+  const[s1x,s1y]=ws(u1[0],u1[1]);const[s2x,s2y]=ws(u2[0],u2[1]);
+  const d1=[s1x-ox,s1y-oy],d2=[s2x-ox,s2y-oy];
+  const l1=Math.sqrt(d1[0]*d1[0]+d1[1]*d1[1]),l2=Math.sqrt(d2[0]*d2[0]+d2[1]*d2[1]);
+  if(l1<1||l2<1)return;
+  const n1=[d1[0]/l1,d1[1]/l1],n2=[d2[0]/l2,d2[1]/l2];
+  ctx.globalAlpha=al;
+  ctx.beginPath();ctx.moveTo(ox+n1[0]*sz,oy+n1[1]*sz);ctx.lineTo(ox+n1[0]*sz+n2[0]*sz,oy+n1[1]*sz+n2[1]*sz);ctx.lineTo(ox+n2[0]*sz,oy+n2[1]*sz);
+  ctx.strokeStyle=col;ctx.lineWidth=2.2;ctx.stroke();ctx.globalAlpha=1;
+}
+function drawGlow(x,y,col,r,al){
+  al=cl(al??1,0,1);if(al<0.01)return;
+  ctx.globalAlpha=al*.55;ctx.beginPath();ctx.arc(...ws(x,y),r,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();ctx.globalAlpha=1;
+}
+
+/* ── piecewise interpolation helper ── */
+// returns 0..1 for a sub-range [a,b] of global time t in [0,1]
+function seg(t,a,b){return sm(cl((t-a)/(b-a),0,1));}
+function segL(t,a,b){return cl((t-a)/(b-a),0,1);}  // linear no ease
+
+/* ══════════════════════════════════════════════
+   MASTER RENDER — single continuous function
+   t = 0..1 (120 seconds)
+══════════════════════════════════════════════ */
+function masterRender(T){
+  // T in seconds 0..120, convert to 0..1
+  const t=cl(T/120,0,1);
+
+  ctx.clearRect(0,0,W,H);ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+
+  /* ── Phase helpers (all times in seconds, normalised) ──
+     We'll define phases as fractions of 120s */
+  const s=T; // alias for readability
+
+  /* ────────────────────────────────────────────
+     0–8s  : Grid fades in, matrix label appears
+  ──────────────────────────────────────────── */
+  const gridAl = seg(t, 0/120, 4/120);
+  const hudAl  = seg(t, 2/120, 6/120);
+
+  /* grid stays visible throughout entire video (fade between A and B grids later) */
+  // grid transform amount: identity until s=8, then animate to A from s=9 to s=14
+  // then back to identity at s=16 for eigenvec phase
+  // then to B grid from s=88 to s=96
+  let gridFn = lerpA;
+  let gridT  = 0;
+  let gridAl2 = gridAl;
+
+  if(s<8)   { gridFn=lerpA; gridT=0; gridAl2=gridAl; }
+  else if(s<9)  { gridFn=lerpA; gridT=0; gridAl2=1; }
+  else if(s<16) { gridFn=lerpA; gridT=segL(t,9/120,15/120); gridAl2=1; }
+  else if(s<16.5){ gridFn=lerpA; gridT=1-seg(t,16/120,16.5/120); gridAl2=1; }
+  else if(s<55) { gridFn=lerpA; gridT=0; gridAl2=1; }
+  else if(s<62) { gridFn=lerpA; gridT=segL(t,56/120,62/120); gridAl2=1; }
+  else if(s<63) { gridFn=lerpA; gridT=1; gridAl2=1; }
+  else if(s<64) { gridFn=lerpA; gridT=1-seg(t,63/120,64/120); gridAl2=1; }
+  else if(s<95) { gridFn=lerpA; gridT=0; gridAl2=1; }
+  else if(s<103){ gridFn=lerpB; gridT=segL(t,97/120,104/120); gridAl2=1; }
+  else if(s<110){ gridFn=lerpB; gridT=1-seg(t,104/120,109/120); gridAl2=1; }
+  else          { gridFn=lerpA; gridT=0; gridAl2=cl(1-seg(t,115/120,118/120),0,1); }
+
+  drawGrid(gridFn,sm(cl(gridT,0,1)),gridAl2);
+
+  /* ────────────────────────────────────────────
+     0–8s : Basis vectors + unit square fade in
+  ──────────────────────────────────────────── */
+  const bvAl = s<8 ? seg(t,2/120,7/120)
+             : s<16 ? 1-seg(t,9/120,15/120)*0.7
+             : s<55 ? 0.3
+             : s<62 ? 1-segL(t,56/120,62/120)*0.7
+             : s<64 ? 0.3
+             : s<95 ? 0.3
+             : s<103 ? 1-segL(t,97/120,103/120)*0.7
+             : 0.25;
+  drawBasis(gridFn,sm(cl(gridT,0,1)),bvAl);
+  drawUSq(gridFn,sm(cl(gridT,0,1)),bvAl*0.9);
+
+  /* ────────────────────────────────────────────
+     3–8s : Matrix HUD
+  ──────────────────────────────────────────── */
+  // HUD shows throughout, fades when grid transforms
+  const hudVx = s<20 ? 1 : s<48 ? lerp(1,1,0) : s<49 ? 1 : E2.vec[0];
+  const hudVy = s<20 ? 1 : s<48 ? lerp(1, s<36?1:0, segL(t,36/120,44/120)) : s<49 ? lerp(0,E2.vec[1],seg(t,49/120,54/120)) : E2.vec[1];
+  const hudTamt = s<9 ? 0 : s<16 ? segL(t,9/120,15/120) : s<55 ? 0 : s<62 ? segL(t,56/120,62/120) : 0;
+  // switch HUD to B matrix when in symmetric phase
+  const hudA = s<95 ? 3 : lerp(3,2,seg(t,95/120,97/120));
+  const hudB2= s<95 ? 1 : 1;
+  const hudC = s<95 ? 0 : lerp(0,1,seg(t,95/120,97/120));
+  const hudD = s<95 ? 2 : lerp(2,2,seg(t,95/120,97/120));
+  const hudAl2= s<4 ? seg(t,3/120,6/120) : s<115 ? 1 : 1-seg(t,115/120,119/120);
+
+  // current v for HUD
+  let hVx=1, hVy=1;
+  if(s>=36 && s<55){ hVx=1; hVy=lerp(1,0,seg(t,36/120,44/120)); }
+  else if(s>=49 && s<70){ hVx=lerp(1,E2.vec[0],seg(t,49/120,57/120)); hVy=lerp(0,E2.vec[1],seg(t,49/120,57/120)); }
+  else if(s>=70){ hVx=E2.vec[0]; hVy=E2.vec[1]; }
+  drawMatHUD(hudA,hudB2,hudC,hudD,hVx,hVy,sm(cl(hudTamt,0,1)),hudAl2);
+
+  /* ────────────────────────────────────────────
+     8–16s : Grid animates under A (deform + return)
+  ──────────────────────────────────────────── */
+  if(s>=8 && s<16){
+    const p=segL(t,9/120,15/120);
+    drawMsg(`t = ${sm(p).toFixed(2)}  — space deforms under A`,'#888','rgba(15,15,15,.6)',H-44,1);
+  }
+
+  /* ────────────────────────────────────────────
+     16–24s : v=[1,1] appears
+  ──────────────────────────────────────────── */
+  const vAppear = seg(t,17/120,21/120);
+  const vAl = s<17 ? 0
+            : s<21 ? vAppear
+            : s<55 ? 1
+            : s<57 ? 1-seg(t,55/120,57/120)
+            : 0;
+  if(vAl>0.01){
+    const[ox,oy]=ws(0,0);
+    // current v position
+    let cvx=1, cvy=1;
+    if(s>=36 && s<55){ cvx=1; cvy=lerp(1,0,seg(t,36/120,44/120)); }
+    arrow(ox,oy,...ws(cvx,cvy),'#FFD700',2.8,'v',vAl);
+    drawDot(cvx,cvy,'#FFD700',vAl);
+  }
+
+  /* ────────────────────────────────────────────
+     22–30s : Av arrow appears — shows A·v≠v direction
+  ──────────────────────────────────────────── */
+  const avAl = s<22 ? 0
+             : s<28 ? seg(t,22/120,27/120)
+             : s<35 ? 1
+             : s<37 ? 1-seg(t,35/120,37/120)
+             : 0;
+  if(avAl>0.01){
+    let cvx2=1,cvy2=1;
+    const[ox,oy]=ws(0,0);
+    const[avx,avy]=applyA(cvx2,cvy2);
+    arrow(ox,oy,...ws(avx,avy),'#EF9F27',2.3,'Av',avAl);
+    // angle arc
+    ctx.globalAlpha=avAl*0.55;
+    ctx.beginPath();ctx.arc(ox,oy,SC*.5,Math.atan2(-cvy2,cvx2),Math.atan2(-avy,avx));
+    ctx.strokeStyle='#ff5555';ctx.lineWidth=2;ctx.stroke();
+    ctx.fillStyle='#ff5555';ctx.font='bold 11px monospace';ctx.textAlign='center';
+    ctx.fillText('rotated!',ox+SC*.9,oy-SC*.3);ctx.globalAlpha=1;
+  }
+  if(s>=26 && s<35){
+    drawMsg('Av rotated — NOT same direction → NOT an eigenvector','#E84040','rgba(130,20,20,.3)',H-44,seg(t,26/120,30/120));
+  }
+
+  /* ────────────────────────────────────────────
+     34–46s : eigenvector lines appear
+  ──────────────────────────────────────────── */
+  const el1Al = s<34 ? 0 : s<95 ? seg(t,34/120,39/120) : 0;
+  const el2Al = s<36 ? 0 : s<70 ? seg(t,36/120,41/120) : s<72 ? 1-seg(t,70/120,72/120) : 0;
+  drawELine(E1.vec,'rgba(255,255,255,.75)',el1Al, s<55?`v₁  λ=3`:el1Al>0.1?'v₁ ✓':'');
+  drawELine(E2.vec,'rgba(255,255,255,.75)',el2Al, s<70?`v₂  λ=2`:'');
+  if(s>=34 && s<45){
+    drawMsg('White dashed lines = eigenvector directions','#fff','rgba(25,25,25,.6)',H-44,seg(t,35/120,39/120)*cl(1-seg(t,42/120,45/120),0,1));
+  }
+
+  /* ────────────────────────────────────────────
+     36–55s : v slides from [1,1] → [1,0] = eigenvector 1
+  ──────────────────────────────────────────── */
+  if(s>=36 && s<55){
+    const p=seg(t,36/120,44/120);
+    const cvx=1, cvy=lerp(1,0,p);
+    const[avx2,avy2]=applyA(cvx,cvy);
+    const[ox,oy]=ws(0,0);
+    // Av tracks
+    const avShowAl = s<38 ? 0 : seg(t,38/120,42/120);
+    arrow(ox,oy,...ws(avx2,avy2),'#EF9F27',2.3,'Av',avShowAl);
+    arrow(ox,oy,...ws(cvx,cvy),'#FFD700',2.8,'v',1);
+    drawDot(cvx,cvy,'#FFD700',1);
+  }
+
+  /* ────────────────────────────────────────────
+     44–58s : v=[1,0] — eigenvector confirmed, λv appears
+  ──────────────────────────────────────────── */
+  const v1ConfAl = s<44 ? 0 : s<60 ? seg(t,44/120,48/120) : s<62 ? 1-seg(t,60/120,62/120) : 0;
+  if(v1ConfAl>0.01){
+    const[ox,oy]=ws(0,0);
+    arrow(ox,oy,...ws(3,0),'#1D9E75',2,'λv=3v',v1ConfAl,true);
+    arrow(ox,oy,...ws(3,0),'#EF9F27',2.3,'Av',v1ConfAl);
+    arrow(ox,oy,...ws(1,0),'#FFD700',2.8,'v₁',v1ConfAl);
+    drawDot(1,0,'#FFD700',v1ConfAl);
+    drawGlow(0,0,'#1D9E75',13,v1ConfAl);
+  }
+  if(s>=44 && s<60){
+    drawMsg('✓  A·v = λ·v  — v₁=[1,0] is an EIGENVECTOR!  λ=3','#1D9E75','rgba(0,60,40,.4)',H-44,seg(t,45/120,49/120)*cl(1-seg(t,58/120,60/120),0,1));
+  }
+
+  /* ────────────────────────────────────────────
+     55–64s : grid animates under A with v1 riding it
+  ──────────────────────────────────────────── */
+  if(s>=55 && s<64){
+    const p=s<62 ? segL(t,56/120,62/120) : 1-seg(t,62/120,64/120);
+    const[ox,oy]=ws(...lerpA(0,0,sm(p)));
+    const e1end=lerpA(E1.vec[0]*2,E1.vec[1]*2,sm(p));
+    arrow(ox,oy,...ws(...e1end),'#FFD700',2.8,'v₁',1);
+    drawDot(...e1end,'#FFD700',1);
+    drawMsg(`t=${sm(p).toFixed(2)} — v₁ stays on its line, only stretched`,'#FFD700','rgba(30,20,0,.5)',H-44,1);
+  }
+
+  /* ────────────────────────────────────────────
+     64–80s : v slides to E2=[1,1]/√2
+  ──────────────────────────────────────────── */
+  const v2SlideAl = s<64 ? 0 : s<80 ? 1 : s<82 ? 1-seg(t,80/120,82/120) : 0;
+  if(v2SlideAl>0.01 && s<80){
+    const p=seg(t,65/120,74/120);
+    const cvx=lerp(1,E2.vec[0],p), cvy=lerp(0,E2.vec[1],p);
+    const[avx2,avy2]=applyA(cvx,cvy);
+    const[ox,oy]=ws(0,0);
+    const avA2=s<68?0:seg(t,68/120,73/120);
+    arrow(ox,oy,...ws(avx2,avy2),'#EF9F27',2.3,'Av',avA2*v2SlideAl);
+    arrow(ox,oy,...ws(cvx,cvy),'#FFD700',2.8,'v',v2SlideAl);
+    drawDot(cvx,cvy,'#FFD700',v2SlideAl);
+  }
+
+  /* ────────────────────────────────────────────
+     74–90s : v2 confirmed as eigenvector
+  ──────────────────────────────────────────── */
+  const v2ConfAl = s<74 ? 0 : s<92 ? seg(t,74/120,78/120) : s<94 ? 1-seg(t,92/120,94/120) : 0;
+  if(v2ConfAl>0.01){
+    const[ox,oy]=ws(0,0);
+    const lv=[E2.lam*E2.vec[0]*1.7,E2.lam*E2.vec[1]*1.7];
+    arrow(ox,oy,...ws(lv[0],lv[1]),'#1D9E75',2,'λv=2v',v2ConfAl,true);
+    arrow(ox,oy,...ws(...applyA(E2.vec[0],E2.vec[1])),'#EF9F27',2.3,'Av',v2ConfAl);
+    arrow(ox,oy,...ws(E2.vec[0]*2,E2.vec[1]*2),'#00ddff',2.8,'v₂',v2ConfAl);
+    drawDot(E2.vec[0]*2,E2.vec[1]*2,'#00ddff',v2ConfAl);
+    drawGlow(0,0,'#1D9E75',13,v2ConfAl);
+  }
+  if(s>=75 && s<91){
+    drawMsg('✓  A·v = λ·v  — v₂=[1,1]/√2 is EIGENVECTOR  λ=2','#00ddff','rgba(0,40,70,.4)',H-44,seg(t,76/120,80/120)*cl(1-seg(t,89/120,91/120),0,1));
+  }
+
+  /* ────────────────────────────────────────────
+     80–95s : both eigenvectors shown, angle check
+  ──────────────────────────────────────────── */
+  const bothAl = s<80 ? 0 : s<95 ? seg(t,80/120,84/120) : s<97 ? 1-seg(t,95/120,97/120) : 0;
+  if(bothAl>0.01){
+    const[ox,oy]=ws(0,0);
+    arrow(ox,oy,...ws(2.2,0),'#FFD700',2.5,'v₁',bothAl);
+    arrow(ox,oy,...ws(E2.vec[0]*2.2,E2.vec[1]*2.2),'#00ddff',2.5,'v₂',bothAl);
+    drawELine(E1.vec,'rgba(255,220,0,.5)',bothAl,'');
+    drawELine(E2.vec,'rgba(0,210,255,.5)',bothAl,'');
+    // angle arc
+    const ang=Math.acos(Math.abs(d2(E1.vec,E2.vec)))*180/Math.PI;
+    const arcAl=s>83?seg(t,83/120,87/120)*bothAl:0;
+    ctx.globalAlpha=arcAl*.6;
+    ctx.beginPath();ctx.arc(ox,oy,SC*.5,Math.atan2(-E2.vec[1],E2.vec[0]),0);
+    ctx.strokeStyle='#ff6666';ctx.lineWidth=2;ctx.stroke();
+    ctx.fillStyle='#ff6666';ctx.font='bold 12px monospace';ctx.textAlign='center';
+    ctx.fillText(`${ang.toFixed(1)}°`,ox+SC*.7,oy-SC*.2);ctx.globalAlpha=1;
+    if(s>=85&&s<93) drawMsg(`b=1≠c=0 → NOT symmetric → ${ang.toFixed(1)}° ≠ 90°`,'#E84040','rgba(130,20,20,.3)',H-44,seg(t,85/120,88/120)*cl(1-seg(t,91/120,93/120),0,1));
+  }
+
+  /* ────────────────────────────────────────────
+     95–112s : switch to symmetric B=[2,1;1,2], eigenvecs perp
+  ──────────────────────────────────────────── */
+  const symAl = s<95 ? 0 : s<112 ? seg(t,95/120,100/120) : s<115 ? 1-seg(t,112/120,115/120) : 0;
+  if(symAl>0.01){
+    const[ox,oy]=ws(0,0);
+    drawELine(SE1.vec,'rgba(255,220,0,.7)',symAl,'v₁  λ=3');
+    drawELine(SE2.vec,'rgba(0,210,255,.7)',symAl,'v₂  λ=1');
+    arrow(ox,oy,...ws(SE1.vec[0]*2.2,SE1.vec[1]*2.2),'#FFD700',2.5,'v₁',symAl);
+    arrow(ox,oy,...ws(SE2.vec[0]*2.2,SE2.vec[1]*2.2),'#00ddff',2.5,'v₂',symAl);
+    const raAl=s>99?seg(t,99/120,103/120)*symAl:0;
+    drawRA(SE1.vec,SE2.vec,'#00ffcc',19,raAl);
+    drawGlow(0,0,'#00ffcc',12,raAl);
+    // label symmetric
+    ctx.globalAlpha=symAl;
+    ctx.fillStyle='rgba(0,0,0,.78)';ctx.beginPath();if(ctx.roundRect)ctx.roundRect(W-162,8,154,48,7);else ctx.rect(W-162,8,154,48);ctx.fill();
+    ctx.fillStyle='#1D9E75';ctx.font='bold 11px monospace';ctx.textAlign='center';
+    ctx.fillText('Symmetric A=[2,1;1,2]',W-85,24);ctx.fillText('b=c=1 → ⊥ guaranteed',W-85,42);ctx.globalAlpha=1;
+    if(s>=100&&s<111) drawMsg('Symmetric: b=c → v₁·v₂=0 → ALWAYS perpendicular ⊥','#00ffcc','rgba(0,60,45,.35)',H-44,seg(t,100/120,104/120)*cl(1-seg(t,109/120,111/120),0,1));
+  }
+
+  /* ────────────────────────────────────────────
+     104–112s: grid transforms under B, eigenvecs stay ⊥
+  ──────────────────────────────────────────── */
+  if(s>=104 && s<112){
+    const p=segL(t,105/120,111/120);
+    const[ox,oy]=ws(...lerpB(0,0,sm(p)));
+    arrow(ox,oy,...ws(...lerpB(SE1.vec[0],SE1.vec[1],sm(p))),'#FFD700',2.5,'v₁',1);
+    arrow(ox,oy,...ws(...lerpB(SE2.vec[0],SE2.vec[1],sm(p))),'#00ddff',2.5,'v₂',1);
+    drawRA(SE1.vec,SE2.vec,'#00ffcc',19,1);
+    drawMsg(`t=${sm(p).toFixed(2)} — ⊥ angle preserved throughout transform`,'#00ffcc','rgba(0,35,25,.5)',H-44,1);
+  }
+
+  /* ────────────────────────────────────────────
+     112–120s : PCA connection + summary fades in
+  ──────────────────────────────────────────── */
+  const pcaAl = s<112 ? 0 : seg(t,112/120,117/120);
+  if(pcaAl>0.01){
+    drawELine(PC1,'rgba(216,90,48,.8)',pcaAl,'PC1  λ=1.28');
+    drawELine(PC2,'rgba(29,158,117,.8)',pcaAl,'PC2  λ=0.05');
+    const[ox,oy]=ws(0,0);
+    arrow(ox,oy,...ws(PC1[0]*2.3,PC1[1]*2.3),'#D85A30',2.5,'PC1',pcaAl);
+    arrow(ox,oy,...ws(PC2[0]*2.3,PC2[1]*2.3),'#1D9E75',2.5,'PC2',pcaAl);
+    drawRA(PC1,PC2,'#00ffcc',19,pcaAl*seg(t,115/120,119/120));
+    if(s>=116) drawMsg('C=Cᵀ (symmetric) → PC1⊥PC2 — mathematical guarantee','#00ffcc','rgba(0,55,45,.4)',H-44,seg(t,116/120,119/120));
+  }
+
+  // summary box last 3 seconds
+  const sumAl = s>=117 ? seg(t,117/120,119/120) : 0;
+  if(sumAl>0.01){
+    ctx.globalAlpha=sumAl;
+    const bw=cl(W-16,180,400),bh=115,bx=(W-bw)/2,by=(H-bh)/2-10;
+    ctx.fillStyle='rgba(0,0,0,.9)';ctx.beginPath();if(ctx.roundRect)ctx.roundRect(bx,by,bw,bh,10);else ctx.rect(bx,by,bw,bh);ctx.fill();
+    ctx.strokeStyle='rgba(127,119,221,.5)';ctx.lineWidth=1;ctx.stroke();
+    [['#7F77DD','A·v = λ·v  →  v is eigenvector'],
+     ['#EF9F27','λ = eigenvalue (stretch factor)'],
+     ['#FFD700','v on dashed line = match found'],
+     ['#00ffcc','symmetric A → eigenvectors ⊥'],
+     ['#1D9E75','PCA: C=Cᵀ → PC1⊥PC2 always ✓'],
+    ].forEach(([c,txt],i)=>{
+      ctx.fillStyle=c;ctx.font='11px monospace';ctx.textAlign='left';ctx.fillText(txt,bx+10,by+22+i*20);});
+    ctx.globalAlpha=1;
+  }
+
+  /* ── caption text ── */
+  const caps=[
+    [0,8,'Matrix A=[3,1/0,2] — a linear transformation in 2D'],
+    [8,16,'The cyan grid deforms — every point moves according to A'],
+    [16,22,'Place vector v=[1,1] — a random vector'],
+    [22,35,'A·v=[4,2] — Av points in a DIFFERENT direction — v is NOT an eigenvector'],
+    [35,46,'White dashed lines = eigenvector directions — special axes A only stretches'],
+    [36,55,'Moving v toward v₁=[1,0] — watch Av converge to same direction as v'],
+    [44,64,'✓ A·v = λ·v — v₁=[1,0] is an EIGENVECTOR! λ=3 — only scaled, never rotated'],
+    [55,65,'Grid transforms — v₁ stays exactly on its line, stretched by λ=3'],
+    [65,80,'Finding second eigenvector — moving v toward v₂=[1,1]/√2'],
+    [74,91,'✓ A·v = 2·v — v₂=[1,1]/√2 is the second EIGENVECTOR! λ=2'],
+    [80,95,'Both eigenvectors found — are they perpendicular? A is not symmetric → NO'],
+    [95,112,'Symmetric A=[2,1;1,2]: b=c → eigenvectors ALWAYS perpendicular ⊥'],
+    [104,112,'Grid transforms under symmetric A — right angle preserved throughout'],
+    [112,120,'PCA covariance C is symmetric → PC1⊥PC2 always — mathematical guarantee'],
+  ];
+  let capText='';
+  for(let i=caps.length-1;i>=0;i--){
+    if(s>=caps[i][0]&&s<caps[i][1]){capText=caps[i][2];break;}
+  }
+  document.getElementById('capt').textContent=capText;
+}
+
+/* ── playback ── */
+const TOTAL=120;
+let elapsed=0,playing=false,lastTs=null,rafId=null;
+function togglePlay(){
+  playing=!playing;document.getElementById('pb').textContent=playing?'⏸':'▶';
+  if(playing){lastTs=null;rafId=requestAnimationFrame(loop);}
+  else cancelAnimationFrame(rafId);
+}
+function restart(){elapsed=0;playing=false;lastTs=null;cancelAnimationFrame(rafId);document.getElementById('pb').textContent='▶';renderFrame();}
+function skip(s){elapsed=cl(elapsed+s,0,TOTAL);renderFrame();}
+function loop(ts){
+  if(!lastTs)lastTs=ts;
+  elapsed=cl(elapsed+(ts-lastTs)/1000,0,TOTAL);lastTs=ts;renderFrame();
+  if(elapsed<TOTAL&&playing)rafId=requestAnimationFrame(loop);
+  else if(elapsed>=TOTAL){playing=false;document.getElementById('pb').textContent='▶';}
+}
+function renderFrame(){
+  masterRender(elapsed);
+  const pct=elapsed/TOTAL*100;
+  document.getElementById('pfill').style.width=pct+'%';
+  document.getElementById('pthumb').style.left=pct+'%';
+  document.getElementById('tdsp').textContent=`${elapsed.toFixed(1)}s / ${TOTAL}s`;
+}
+/* scrub bar */
+const pt=document.getElementById('ptrack');let scrub=false;
+function scrubAt(e){const r=pt.getBoundingClientRect();elapsed=cl(((e.touches?e.touches[0].clientX:e.clientX)-r.left)/r.width*TOTAL,0,TOTAL);renderFrame();}
+pt.addEventListener('pointerdown',e=>{scrub=true;pt.setPointerCapture(e.pointerId);scrubAt(e);});
+pt.addEventListener('pointermove',e=>{if(scrub)scrubAt(e);});
+pt.addEventListener('pointerup',()=>{scrub=false;});
+/* auto-hide controls */
+const wrap=document.getElementById('wrap'),ui=document.getElementById('ui');let ht;
+wrap.addEventListener('pointermove',()=>{ui.style.opacity='1';ui.style.pointerEvents='auto';clearTimeout(ht);ht=setTimeout(()=>{if(playing){ui.style.opacity='0';ui.style.pointerEvents='none';}},2500);});
+wrap.addEventListener('pointerleave',()=>{if(playing){ui.style.opacity='0';ui.style.pointerEvents='none';}});
+resize();renderFrame();
+window.addEventListener('resize',()=>{resize();renderFrame();});
+</script>

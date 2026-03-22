@@ -1,0 +1,214 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font-sans, sans-serif); color: var(--color-text-primary); padding: 16px; }
+
+  h2 { font-size: 15px; font-weight: 500; margin-bottom: 16px; color: var(--color-text-secondary); }
+
+  /* Warning box */
+  .warning-box {
+    border: 1px solid #BA7517;
+    border-radius: 8px;
+    background: #FAEEDA;
+    color: #633806;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  @media (prefers-color-scheme: dark) {
+    .warning-box { background: #412402; color: #FAC775; border-color: #854F0B; }
+  }
+  .warning-box strong { font-weight: 500; display: block; margin-bottom: 4px; font-size: 13px; }
+  .warning-box ul { padding-left: 16px; margin-top: 4px; }
+
+  /* Steps */
+  .step {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 10px;
+    border-radius: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--color-border-tertiary);
+    background: var(--color-background-secondary);
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .step:hover { border-color: var(--color-border-primary); }
+
+  .badge {
+    min-width: 28px; height: 28px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 500;
+    flex-shrink: 0; margin-top: 1px;
+  }
+
+  .step-content { flex: 1; }
+  .step-title { font-size: 14px; font-weight: 500; margin-bottom: 3px; }
+  .step-desc { font-size: 12px; color: var(--color-text-secondary); line-height: 1.6; }
+  .step-warn { font-size: 11px; margin-top: 5px; padding: 5px 8px; border-radius: 6px; line-height: 1.5; }
+
+  /* Colors */
+  .gray  { background: #D3D1C7; color: #444441; }
+  .coral { background: #F5C4B3; color: #4A1B0C; }
+  .purple{ background: #CECBF6; color: #26215C; }
+  .amber { background: #FAC775; color: #412402; }
+  .teal  { background: #9FE1CB; color: #04342C; }
+  .blue  { background: #B5D4F4; color: #042C53; }
+  .green { background: #C0DD97; color: #173404; }
+  .red   { background: #F7C1C1; color: #501313; }
+
+  .warn-amber { background: #FAEEDA; color: #633806; border: 1px solid #EF9F27; }
+  .warn-red   { background: #FCEBEB; color: #501313; border: 1px solid #E24B4A; }
+
+  @media (prefers-color-scheme: dark) {
+    .gray   { background: #444441; color: #D3D1C7; }
+    .coral  { background: #4A1B0C; color: #F5C4B3; }
+    .purple { background: #26215C; color: #CECBF6; }
+    .amber  { background: #412402; color: #FAC775; }
+    .teal   { background: #04342C; color: #9FE1CB; }
+    .blue   { background: #042C53; color: #B5D4F4; }
+    .green  { background: #173404; color: #C0DD97; }
+    .red    { background: #501313; color: #F7C1C1; }
+    .warn-amber { background: #412402; color: #FAC775; border-color: #854F0B; }
+    .warn-red   { background: #501313; color: #F7C1C1; border-color: #A32D2D; }
+  }
+
+  .connector { text-align: center; color: var(--color-text-tertiary); font-size: 18px; margin: -4px 0; line-height: 1; }
+
+  /* Scaler table */
+  .scaler-table { width: 100%; font-size: 12px; border-collapse: collapse; margin-top: 6px; }
+  .scaler-table th { font-weight: 500; text-align: left; padding: 3px 6px; color: var(--color-text-secondary); border-bottom: 1px solid var(--color-border-tertiary); }
+  .scaler-table td { padding: 4px 6px; color: var(--color-text-secondary); border-bottom: 1px solid var(--color-border-tertiary); }
+  .scaler-table tr:last-child td { border-bottom: none; }
+</style>
+</head>
+<body>
+
+<h2>Complete K-Means data preparation pipeline</h2>
+
+<!-- Assumptions box — critical, shown first -->
+<div class="warning-box">
+  <strong>Before you start: K-Means assumptions — check these first</strong>
+  If your data violates these, no amount of preprocessing will fix bad results. Consider DBSCAN or GMM instead.
+  <ul>
+    <li>Clusters are <strong>roughly spherical</strong> (not elongated or arc-shaped)</li>
+    <li>Clusters have <strong>similar variance</strong> (not one tight, one spread)</li>
+    <li>Clusters have <strong>similar density</strong> (not one dense, one sparse)</li>
+    <li>You have a <strong>rough idea of K</strong> — K-Means cannot discover it automatically</li>
+  </ul>
+</div>
+
+<!-- Step 1 -->
+<div class="step" onclick="sendPrompt('How do I inspect data before K-Means? What plots are most useful?')">
+  <div class="badge gray">1</div>
+  <div class="step-content">
+    <div class="step-title">Inspect</div>
+    <div class="step-desc">Histograms + boxplots for each feature. Note skewness, outliers, missing values, scales. This informs every step below.</div>
+  </div>
+</div>
+<div class="connector">↓</div>
+
+<!-- Step 2 -->
+<div class="step" onclick="sendPrompt('How should I handle missing values before K-Means clustering?')">
+  <div class="badge coral">2</div>
+  <div class="step-content">
+    <div class="step-title">Handle missing values</div>
+    <div class="step-desc">Impute with median (skewed) or mean (normal). K-Means cannot operate on NaN — this step is mandatory.</div>
+  </div>
+</div>
+<div class="connector">↓</div>
+
+<!-- Step 3 -->
+<div class="step" onclick="sendPrompt('How do I encode categorical features for K-Means?')">
+  <div class="badge purple">3</div>
+  <div class="step-content">
+    <div class="step-title">Encode categoricals</div>
+    <div class="step-desc">One-hot for nominal (city, gender), ordinal for ordered values. For heavy mixed data, prefer K-Prototypes over K-Means.</div>
+  </div>
+</div>
+<div class="connector">↓</div>
+
+<!-- Step 4 — log transform with proper caveat -->
+<div class="step" onclick="sendPrompt('When should I use log transformation before K-Means? When should I not?')">
+  <div class="badge amber">4</div>
+  <div class="step-content">
+    <div class="step-title">Transform skewed features (conditionally)</div>
+    <div class="step-desc">Only apply log/log1p when: (a) the feature is right-skewed, (b) all values are positive, (c) the skew is actually hurting distance calculations.</div>
+    <div class="step-warn warn-amber">⚠ Log transform is NOT always beneficial for clustering. Symmetric or bimodal features — skip it. Always re-check the distribution after transforming.</div>
+  </div>
+</div>
+<div class="connector">↓</div>
+
+<!-- Step 5 — feature selection / PCA -->
+<div class="step" onclick="sendPrompt('Should I use PCA or feature selection before K-Means? What is the curse of dimensionality?')">
+  <div class="badge red">5</div>
+  <div class="step-content">
+    <div class="step-title">Reduce dimensions / select features</div>
+    <div class="step-desc">In high dimensions, Euclidean distance becomes meaningless (curse of dimensionality). Two options:</div>
+    <div class="step-warn warn-red" style="margin-top:6px">
+      <strong style="font-size:11px; font-weight:500">Feature selection:</strong> drop irrelevant or redundant features. Correlated features distort distances by double-counting.<br>
+      <strong style="font-size:11px; font-weight:500">PCA:</strong> reduce to 2–10 components that explain ~90% variance. Removes noise and collinearity at once. Visualise clusters in 2D for free.
+    </div>
+  </div>
+</div>
+<div class="connector">↓</div>
+
+<!-- Step 6 — Scale -->
+<div class="step" onclick="sendPrompt('Which scaler is best for K-Means and why?')">
+  <div class="badge blue">6</div>
+  <div class="step-content">
+    <div class="step-title">Scale features</div>
+    <div class="step-desc">K-Means uses Euclidean distance — unscaled features with large ranges will dominate the result.</div>
+    <table class="scaler-table">
+      <tr><th>Scaler</th><th>Use when</th><th>Outlier sensitivity</th></tr>
+      <tr><td>StandardScaler</td><td>Normal distribution, few outliers</td><td>High</td></tr>
+      <tr><td>MinMaxScaler</td><td>Need 0–1 range, no outliers</td><td>Very high</td></tr>
+      <tr><td>RobustScaler</td><td>Outliers present — uses median/IQR</td><td>Low ✓ best default</td></tr>
+    </table>
+  </div>
+</div>
+<div class="connector">↓</div>
+
+<!-- Step 7 — Choose K (the critical missing step) -->
+<div class="step" onclick="sendPrompt('Walk me through the elbow method and silhouette score to choose K for K-Means')">
+  <div class="badge teal">7</div>
+  <div class="step-content">
+    <div class="step-title">Choose optimal K — do not skip this</div>
+    <div class="step-desc">
+      <strong style="font-weight:500">Elbow method:</strong> plot inertia (within-cluster sum of squares) vs K. Pick the K where the curve bends — adding more K beyond this gives diminishing returns.<br><br>
+      <strong style="font-weight:500">Silhouette Score:</strong> ranges −1 to +1. Higher = better-separated clusters. Run both methods and confirm they agree. If they disagree, prefer Silhouette.
+    </div>
+    <div class="step-warn warn-amber" style="margin-top:6px">⚠ Never pick K by intuition alone. Always validate with at least one metric.</div>
+  </div>
+</div>
+<div class="connector">↓</div>
+
+<!-- Step 8 — Cluster -->
+<div class="step" onclick="sendPrompt('What are best practices when running K-Means fit in sklearn?')">
+  <div class="badge purple">8</div>
+  <div class="step-content">
+    <div class="step-title">Cluster</div>
+    <div class="step-desc">Use <code style="font-size:11px; background:var(--color-background-tertiary); padding:1px 4px; border-radius:3px">init="k-means++"</code> and <code style="font-size:11px; background:var(--color-background-tertiary); padding:1px 4px; border-radius:3px">n_init=20</code> to escape local minima. K-Means++ gives better initial centroid placement than random.</div>
+  </div>
+</div>
+<div class="connector">↓</div>
+
+<!-- Step 9 — Evaluate -->
+<div class="step" onclick="sendPrompt('How do I evaluate K-Means cluster quality with Silhouette and Davies-Bouldin?')">
+  <div class="badge green">9</div>
+  <div class="step-content">
+    <div class="step-title">Evaluate clusters</div>
+    <div class="step-desc">
+      Silhouette Score (higher = better) · Davies-Bouldin Index (lower = better) · Visual PCA or t-SNE plot.<br>
+      If clusters look wrong — revisit step 4 (transform) or step 5 (features/PCA) before changing K.
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
