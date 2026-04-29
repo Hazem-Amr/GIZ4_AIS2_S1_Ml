@@ -1,0 +1,48 @@
+
+Encoder-Decoder
+                               ========> models which Understand the context of the speech
+Sequence to Sequence models 
+
+
+-paper attention is all you need (research)
+
+-More tokens that model made isn't bad it's good for reasoning 
+
+
+-Preprocessing in NLP
+
+1- Stop Words high-frequency, low-semantic-value words (e.g., "the," "is," "and") removed during text preprocessing to reduce noise and computation time
+(Works with sentiment analysis but not with Chatbot beacuse it will change the context os the sentence)
+
+2- Stemming natural language processing (NLP) technique that reduces words to their base or root form (stem) by chopping off inflections, such as "-ing", "-ed", or "-s"
+(Used in sentiment analysis)
+
+3- Lemmatization is a text normalization technique in Natural Language Processing (NLP) that reduces a word to its base or dictionary form, known as a lemma.
+Unlike stemming, which crudely "chops off" prefixes or suffixes to find a root, lemmatization uses a vocabulary and morphological analysis to ensure the resulting word is a valid, meaningful entry in the language. 
+
+4- Regular Exepresion used in cleaning text
+
+5- Part of speech categories that define the role a word plays in a sentence based on its syntax and meaning.
+
+6- Named Entity Recognition (NER) (also known as entity extraction or chunking) is a subtask of Natural Language Processing (NLP) that identifies and classifies specific information—known as "entities"—within a text into predefined categories.
+Common Entity Categories
+While categories can vary by field, most systems focus on these core types: 
+Person (PER): Names of real or fictional individuals (e.g., Albert Einstein, Sherlock Holmes).
+Organization (ORG): Companies, institutions, or government agencies (e.g., Google, United Nations).
+Location (LOC/GPE): Geographical places or geopolitical entities like cities and countries (e.g., Paris, Brazil).
+Date & Time: Specific calendar dates or time periods (e.g., 5th May 2025, 3:00 PM).
+Numerical Values: Quantities, percentages, or monetary sums (e.g., 10 kilograms, 50%, $100)
+
+7- Spell correction the automated process of identifying and fixing typographical errors to improve the accuracy of text data for humans and machines alike
+
+(Text --> tokens) mandatory --> (Stop words --> Stemming or Lemmatization --> regex --> POS --> NER --> spell correction) based on task
+
+Optical Character Recognition (OCR) is a technology used to convert images containing text—such as scanned paper documents, photos of signs, or image-only PDFs—into machine-readable and editable text data
+
+
+preprocessing (Tokenization, Stemming or Lemmatization, regex)
+annotation (POS, NER)
+layer correction (spell correction)
+
+
+word embedding --> word2vec --> skip gram
