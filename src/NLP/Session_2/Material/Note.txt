@@ -1,0 +1,175 @@
+🔄 Correct GRU flow (step by step)
+1️⃣ Input x
+t
+	​
+
+ is used in two parallel paths
+🔹 Path A: build the candidate
+C
+~
+=tanh(Wx
+t
+	​
+
++U(G
+r
+	​
+
+⊙h
+t−1
+	​
+
+))
+x
+t
+	​
+
+ goes into tanh
+past h
+t−1
+	​
+
+ is filtered by reset gate G
+r
+	​
+
+
+👉 So:
+
+we don’t use all past — only the relevant part
+
+2️⃣ Reset gate (your “control past” part)
+G
+r
+	​
+
+=σ(W
+r
+	​
+
+x
+t
+	​
+
++U
+r
+	​
+
+h
+t−1
+	​
+
+)
+
+✔️ Correct interpretation:
+
+controls how much past memory contributes to the candidate
+
+3️⃣ Update gate (your “decide update” part)
+G
+u
+	​
+
+=σ(W
+u
+	​
+
+x
+t
+	​
+
++U
+u
+	​
+
+h
+t−1
+	​
+
+)
+
+✔️ It looks at:
+
+current input x
+t
+	​
+
+past memory h
+t−1
+	​
+
+
+👉 and decides:
+
+how much to update the memory
+
+4️⃣ Final update
+h
+t
+	​
+
+=G
+u
+	​
+
+C
+~
++(1−G
+u
+	​
+
+)h
+t−1
+	​
+
+
+✔️ This is exactly your idea:
+
+take some % of new info
+keep remaining % of old memory
+🔥 Fixing your sentence (minimal correction)
+
+Your version:
+
+“Xt goes to tanh and we control past by reset gate and then Xt and past go through update gate to decide update”
+
+✔️ Corrected version:
+
+x
+t
+	​
+
+ and filtered past (via reset gate) are used to build the candidate, then x
+t
+	​
+
+ and past are used again in the update gate to decide how much of the candidate replaces the previous memory
+
+⚠️ Small but important detail
+x
+t
+	​
+
+ does not go directly alone into tanh
+it goes together with:
+G
+r
+	​
+
+⊙h
+t−1
+	​
+
+
+👉 so candidate = input + filtered past, not input only
+
+🧠 Final mental model
+        past (h_{t-1})
+             ↓
+        [Reset Gate]
+             ↓
+   (filtered past + input) → tanh → candidate
+                    ↓
+        [Update Gate decides mix]
+                    ↓
+               new memory (h_t)
